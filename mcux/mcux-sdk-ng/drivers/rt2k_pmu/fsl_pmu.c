@@ -8,131 +8,40 @@
 #include "fsl_pmu.h"
 
 /*******************************************************************************
- * Definitions
- ******************************************************************************/
-
-/* PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG field positions */
-#define DCDC_VOUT_ADJ_SHIFT          (0U)
-#define DCDC_VOUT_ADJ_MASK           (0x1FU)
-#define DCDC_VOUT_FINE_ADJ_SHIFT     (5U)
-#define DCDC_VOUT_FINE_ADJ_MASK      (0x60U)
-#define DCDC_IPK_ADJ_SHIFT           (7U)
-#define DCDC_IPK_ADJ_MASK            (0x180U)
-#define DCDC_OVL_VTH_ADJ_SHIFT       (19U)
-#define DCDC_OVL_VTH_ADJ_MASK        (0x380000U)
-#define DCDC_VSENSOR_VOUT_ADJ_EN_POS (25U)
-#define DCDC_BYPASS_EN_POS           (26U)
-#define DCDC_OVL_PD_EN_POS           (27U)
-
-/* PMU_BUCK_VDDCORE_CTRL_PWM_REG field positions */
-#define PWM_LOOPFILTER_RES_ADJ_SHIFT (0U)
-#define PWM_LOOPFILTER_CAP_ADJ_SHIFT (3U)
-#define PWM_SAWTOOTH_ADJ_SHIFT       (6U)
-#define PWM_GM_ADJ_SHIFT             (9U)
-#define PWM_GM_OVL_PULLUP_DIS_POS    (12U)
-#define PWM_GM_INI_COND_POS          (13U)
-#define PWM_IPK_OVR_POS              (14U)
-#define PWM_PULSESKIP_SHIFT          (15U)
-#define PWM_MASK_PEAKP_SHIFT         (17U)
-#define PWM_MASK_SAWTOOTH_SHIFT      (19U)
-#define PWM_SET_PWM_SHIFT            (21U)
-#define PWM_MASK_OCL_SHIFT           (23U)
-#define PWM_MASK_ZCS_SHIFT           (25U)
-#define PWM_DIS_PULSESKIPING_POS     (27U)
-#define PWM_VOUT_STEPS_POS           (28U)
-
-/* PMU_BODYBIAS_CONFIG_REG field positions */
-#define BB_MODE_SHIFT       (0U)
-#define BB_MODE_MASK        (0x7U)
-#define BB_PWELL_CLK_SHIFT  (4U)
-#define BB_RAMP_CLK_SHIFT   (6U)
-#define BB_ADVC_EN_POS      (15U)
-#define BB_NWELL_VOL_SHIFT  (16U)
-#define BB_NWELL_VOL_MASK   (0x7F0000U)
-#define BB_PWELL_VOL_SHIFT  (24U)
-#define BB_PWELL_VOL_MASK   (0x7F000000U)
-
-/* PMU_BODYBIAS_COMMAND_REG commands */
-#define BB_CMD_UPDATE       (1U)
-
-/* PMU_BODYBIAS_STATUS_STS field positions used to verify WBIAS settled. */
-#define BB_STATUS_NWELL_OK_MASK      (1UL << 0U)
-#define BB_STATUS_PWELL_OK_MASK      (1UL << 1U)
-#define BB_STATUS_SAFE_STATE_MASK    (1UL << 2U)
-#define BB_STATUS_NWELL_STATE_SHIFT  (16U)
-#define BB_STATUS_PWELL_STATE_SHIFT  (24U)
-#define BB_STATUS_VSTATE_MASK        (0x7FU)
-
-/* PMU_SENSOR_CTRL0_REG field positions */
-#define SENSOR_CTRL0_CORE_LOWER_SHIFT (0U)
-#define SENSOR_CTRL0_CORE_UPPER_SHIFT (2U)
-#define SENSOR_CTRL0_0V8_LOWER_SHIFT  (4U)
-#define SENSOR_CTRL0_0V8_UPPER_SHIFT  (6U)
-#define SENSOR_CTRL0_1V8_LOWER_SHIFT  (8U)
-#define SENSOR_CTRL0_1V8_UPPER_SHIFT  (10U)
-#define SENSOR_CTRL0_VDDA_LOWER_SHIFT (12U)
-#define SENSOR_CTRL0_VDDA_UPPER_SHIFT (14U)
-
-/* PMU_SENSOR_CTRL1_REG field positions */
-#define SENSOR_CTRL1_PMU1V8_LOWER_SHIFT (0U)
-#define SENSOR_CTRL1_PMU1V8_UPPER_SHIFT (2U)
-#define SENSOR_CTRL1_PMU3V_LOWER_SHIFT  (4U)
-#define SENSOR_CTRL1_PMU3V_UPPER_SHIFT  (6U)
-
-/* PMU_TEMP_SENSOR field positions */
-#define TEMP_HT_THRE_SHIFT  (0U)
-#define TEMP_LT_THRE_SHIFT  (2U)
-#define TEMP_TRIM_EN_POS    (4U)
-
-/* PMU_LDO_CTRL_REG field positions */
-#define LDO_VDD1V8_SEL_SHIFT     (0U)
-#define LDO_VDD1V8_BYPASS_POS    (2U)
-#define LDO_VDD0V8_SEL_SHIFT     (4U)
-#define LDO_VDD0V8_BYPASS_POS    (6U)
-#define LDO_VDD0V8_DISILIM_POS   (7U)
-#define LDO_VDD1V8_LP_SEL_SHIFT  (8U)
-#define LDO_VDD0V8_LP_SEL_SHIFT  (10U)
-#define LDO_VDDA1V8_SEL_SHIFT    (12U)
-#define LDO_VDDA1V8_BYPASS_POS   (14U)
-#define LDO_VDDA1V8_DISILIM_POS  (15U)
-
-/*******************************************************************************
  * Code
  ******************************************************************************/
 
+static inline void PMU_SetOrClearBits(uint32_t *value, uint32_t mask, bool set)
+{
+    *value = set ? (*value | mask) : (*value & ~mask);
+}
+
 static bool PMU_IsBodyBiasStable(PMU_Type *base, const pmu_body_bias_config_t *config)
 {
-    uint32_t sts = base->PMU_BODYBIAS_STATUS_STS;
-    bool stable = ((sts & BB_STATUS_SAFE_STATE_MASK) != 0UL);
+    uint32_t sts        = base->PMU_BODYBIAS_STATUS_STS;
+    uint32_t nwellState = (sts & PMU_PMU_BODYBIAS_STATUS_STS_PMU_BB_NWELL_V_STATE_MASK) >>
+                          PMU_PMU_BODYBIAS_STATUS_STS_PMU_BB_NWELL_V_STATE_SHIFT;
+    uint32_t pwellState = (sts & PMU_PMU_BODYBIAS_STATUS_STS_PMU_BB_PWELL_V_STATE_MASK) >>
+                          PMU_PMU_BODYBIAS_STATUS_STS_PMU_BB_PWELL_V_STATE_SHIFT;
+    bool nwellOk = ((sts & PMU_PMU_BODYBIAS_STATUS_STS_PMU_BB_NWELL_V_OK_MASK) != 0UL);
+    bool pwellOk = ((sts & PMU_PMU_BODYBIAS_STATUS_STS_PMU_BB_PWELL_V_OK_MASK) != 0UL);
+    bool stable  = ((sts & PMU_PMU_BODYBIAS_STATUS_STS_PMU_BB_SAFE_STATE_MASK) != 0UL);
 
     if (config->mode == kPMU_BodyBiasFBBFull)
     {
-        uint32_t nwellState = (sts >> BB_STATUS_NWELL_STATE_SHIFT) & BB_STATUS_VSTATE_MASK;
-        uint32_t pwellState = (sts >> BB_STATUS_PWELL_STATE_SHIFT) & BB_STATUS_VSTATE_MASK;
-
-        stable = stable && ((sts & BB_STATUS_NWELL_OK_MASK) != 0UL) &&
-                 ((sts & BB_STATUS_PWELL_OK_MASK) != 0UL) &&
-                 (nwellState == config->nwellVolSel) && (pwellState == config->pwellVolSel);
+        stable =
+            stable && nwellOk && pwellOk && (nwellState == config->nwellVolSel) && (pwellState == config->pwellVolSel);
     }
     else if (config->mode == kPMU_BodyBiasFBBPWell)
     {
-        uint32_t pwellState = (sts >> BB_STATUS_PWELL_STATE_SHIFT) & BB_STATUS_VSTATE_MASK;
-
-        stable = stable && ((sts & BB_STATUS_PWELL_OK_MASK) != 0UL) &&
-                 (pwellState == config->pwellVolSel);
+        stable = stable && pwellOk && (pwellState == config->pwellVolSel);
     }
     else if (config->mode == kPMU_BodyBiasFBBNWell)
     {
-        uint32_t nwellState = (sts >> BB_STATUS_NWELL_STATE_SHIFT) & BB_STATUS_VSTATE_MASK;
-
-        stable = stable && ((sts & BB_STATUS_NWELL_OK_MASK) != 0UL) &&
-                 (nwellState == config->nwellVolSel);
+        stable = stable && nwellOk && (nwellState == config->nwellVolSel);
     }
     else if (config->mode == kPMU_BodyBiasZBB)
     {
-        uint32_t nwellState = (sts >> BB_STATUS_NWELL_STATE_SHIFT) & BB_STATUS_VSTATE_MASK;
-        uint32_t pwellState = (sts >> BB_STATUS_PWELL_STATE_SHIFT) & BB_STATUS_VSTATE_MASK;
-
         stable = stable && (nwellState == 0U) && (pwellState == 0U);
     }
 
@@ -159,95 +68,146 @@ void PMU_ConfigDcdc(PMU_Type *base, const pmu_dcdc_config_t *config)
 {
     assert(config != NULL);
 
-    /* Configure DCDC converter registers in four sequential write passes. */
-    /* Assemble PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG. */
-    uint32_t reg = 0U;
-    reg |= ((uint32_t)config->voutAdj & DCDC_VOUT_ADJ_MASK) << DCDC_VOUT_ADJ_SHIFT;
-    reg |= ((uint32_t)config->voutFineAdj & 0x3U) << DCDC_VOUT_FINE_ADJ_SHIFT;
-    reg |= ((uint32_t)config->mode & 0x3U) << DCDC_IPK_ADJ_SHIFT;
-    reg |= ((uint32_t)config->ovlVthAdj & 0x7U) << DCDC_OVL_VTH_ADJ_SHIFT;
-    /* Optional analog control flags: voltage sensor adjust, bypass, OVL power-down. */
-    if (config->vsensorVoutAdjEn)
-    {
-        reg |= (1UL << DCDC_VSENSOR_VOUT_ADJ_EN_POS);
-    }
-    if (config->bypassEn)
-    {
-        reg |= (1UL << DCDC_BYPASS_EN_POS);
-    }
-    if (config->ovlPdEn)
-    {
-        reg |= (1UL << DCDC_OVL_PD_EN_POS);
-    }
-    base->PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG = reg;
+    /* The analog control register belongs to the DCDC alone, so it is written whole. IPK_ADJ selects the
+     * over-current limit of each DCDC operating mode (PFM/STARTUP/PWM/DPD), which is why it carries config->mode. */
+    uint32_t anaCtrl = 0U;
+    anaCtrl |= PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_VOUT_ADJ(config->voutAdj);
+    anaCtrl |= PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_VOUT_FINE_ADJ(config->voutFineAdj);
+    anaCtrl |= PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_IPK_ADJ(config->mode);
+    anaCtrl |= PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_OVL_VTH_ADJ(config->ovlVthAdj);
+    anaCtrl |=
+        PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_VSENSOR_VOUT_ADJ_EN(config->vsensorVoutAdjEn ? 1UL : 0UL);
+    anaCtrl |= PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_BYPASS_EN(config->bypassEn ? 1UL : 0UL);
+    anaCtrl |= PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_OVL_PD_EN(config->ovlPdEn ? 1UL : 0UL);
+    base->PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG = anaCtrl;
 
-    /* Sensor thresholds in SENSOR_CTRL0_REG bits [3:0]. */
-    uint32_t sensor0 = base->PMU_SENSOR_CTRL0_REG;
-    sensor0 &= ~(0xFUL); /* Clear bits [3:0] */
-    sensor0 |= ((uint32_t)config->sensorLowerThres & 0x3U) << SENSOR_CTRL0_CORE_LOWER_SHIFT;
-    sensor0 |= ((uint32_t)config->sensorUpperThres & 0x3U) << SENSOR_CTRL0_CORE_UPPER_SHIFT;
-    base->PMU_SENSOR_CTRL0_REG = sensor0;
+    uint32_t sensorCtrl0 = base->PMU_SENSOR_CTRL0_REG;
+    sensorCtrl0 &= ~(PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD_CORE_LOWER_THRES_MASK |
+                     PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD_CORE_UPPER_THRES_MASK);
+    sensorCtrl0 |= PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD_CORE_LOWER_THRES(config->sensorLowerThres);
+    sensorCtrl0 |= PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD_CORE_UPPER_THRES(config->sensorUpperThres);
+    base->PMU_SENSOR_CTRL0_REG = sensorCtrl0;
 
-    /* IRQ enables — DCDC bits in PMU_DIG_IRQ_EN_REG [4:0]. */
-    uint32_t irqEn = base->PMU_DIG_IRQ_EN_REG;
-    irqEn &= ~(0x1FUL);
-    /* Set DCDC interrupt source enables per config. */
-    if (config->irqOnVmaxError) { irqEn |= (1UL << 0U); }
-    if (config->irqOnVminError) { irqEn |= (1UL << 1U); }
-    if (config->irqOnClkLost)   { irqEn |= (1UL << 2U); }
-    if (config->irqOnUvlo)      { irqEn |= (1UL << 3U); }
-    if (config->irqOnOclWarn)   { irqEn |= (1UL << 4U); }
-    base->PMU_DIG_IRQ_EN_REG = irqEn;
+    /* BUCK_VDDCORE_IRQ is raised when the DCDC under-voltage lockout lasts longer than 8.96 us, so it
+     * carries the UVLO actions. */
+    uint32_t irqEnable = base->PMU_DIG_IRQ_EN_REG;
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDDCORE_VMIN_ERROR_IRQ_EN_MASK,
+                       config->irqOnVminError);
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDDCORE_VMAX_ERROR_IRQ_EN_MASK,
+                       config->irqOnVmaxError);
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_BUCK_VDDCORE_CLK_LOST_IRQ_EN_MASK,
+                       config->irqOnClkLost);
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_BUCK_VDDCORE_IRQ_IRQ_EN_MASK, config->irqOnUvlo);
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_BUCK_VDDCORE_OCL_WARN_IRQ_EN_MASK,
+                       config->irqOnOclWarn);
+    base->PMU_DIG_IRQ_EN_REG = irqEnable;
 
-    /* Warm reset triggers — DCDC bits in RESETCON_WARM_CTRL [4:0]. */
-    uint32_t warm = base->PMU_RESETCON_WARM_CTRL;
-    warm &= ~(0x1FUL);
-    /* Set DCDC warm-reset trigger enables per config. */
-    if (config->warmResetOnVmaxError) { warm |= (1UL << 0U); }
-    if (config->warmResetOnVminError) { warm |= (1UL << 1U); }
-    if (config->warmResetOnClkLost)   { warm |= (1UL << 2U); }
-    if (config->warmResetOnUvlo)      { warm |= (1UL << 3U); }
-    if (config->warmResetOnOclWarn)   { warm |= (1UL << 4U); }
-    base->PMU_RESETCON_WARM_CTRL = warm;
+    uint32_t warmReset = base->PMU_RESETCON_WARM_CTRL;
+    PMU_SetOrClearBits(&warmReset, PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDDCORE_VMIN_ERROR_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnVminError);
+    PMU_SetOrClearBits(&warmReset, PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDDCORE_VMAX_ERROR_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnVmaxError);
+    PMU_SetOrClearBits(&warmReset, PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_BUCK_VDDCORE_CLK_LOST_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnClkLost);
+    PMU_SetOrClearBits(&warmReset, PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_BUCK_VDDCORE_IRQ_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnUvlo);
+    PMU_SetOrClearBits(&warmReset, PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_BUCK_VDDCORE_OCL_WARN_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnOclWarn);
+    base->PMU_RESETCON_WARM_CTRL = warmReset;
 
-    /* Cold reset triggers — DCDC bits in RESETCON_COLD_CTRL [4:0]. */
-    uint32_t cold = base->PMU_RESETCON_COLD_CTRL;
-    cold &= ~(0x1FUL);
-    /* Set DCDC cold-reset trigger enables per config. */
-    if (config->coldResetOnVmaxError) { cold |= (1UL << 0U); }
-    if (config->coldResetOnVminError) { cold |= (1UL << 1U); }
-    if (config->coldResetOnClkLost)   { cold |= (1UL << 2U); }
-    if (config->coldResetOnUvlo)      { cold |= (1UL << 3U); }
-    if (config->coldResetOnOclWarn)   { cold |= (1UL << 4U); }
-    base->PMU_RESETCON_COLD_CTRL = cold;
+    uint32_t coldReset = base->PMU_RESETCON_COLD_CTRL;
+    PMU_SetOrClearBits(&coldReset, PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDDCORE_VMIN_ERROR_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnVminError);
+    PMU_SetOrClearBits(&coldReset, PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDDCORE_VMAX_ERROR_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnVmaxError);
+    PMU_SetOrClearBits(&coldReset, PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_BUCK_VDDCORE_CLK_LOST_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnClkLost);
+    PMU_SetOrClearBits(&coldReset, PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_BUCK_VDDCORE_IRQ_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnUvlo);
+    PMU_SetOrClearBits(&coldReset, PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_BUCK_VDDCORE_OCL_WARN_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnOclWarn);
+    base->PMU_RESETCON_COLD_CTRL = coldReset;
+}
+
+void PMU_GetDcdcConfig(PMU_Type *base, pmu_dcdc_config_t *config)
+{
+    assert(config != NULL);
+
+    uint32_t anaCtrl = base->PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG;
+    config->mode = (pmu_dcdc_mode_t)((anaCtrl & PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_IPK_ADJ_MASK) >>
+                                     PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_IPK_ADJ_SHIFT);
+    config->voutAdj = (uint8_t)((anaCtrl & PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_VOUT_ADJ_MASK) >>
+                                PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_VOUT_ADJ_SHIFT);
+    config->voutFineAdj =
+        (uint8_t)((anaCtrl & PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_VOUT_FINE_ADJ_MASK) >>
+                  PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_VOUT_FINE_ADJ_SHIFT);
+    config->ovlVthAdj = (uint8_t)((anaCtrl & PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_OVL_VTH_ADJ_MASK) >>
+                                  PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_OVL_VTH_ADJ_SHIFT);
+    config->vsensorVoutAdjEn =
+        ((anaCtrl & PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_VSENSOR_VOUT_ADJ_EN_MASK) != 0UL);
+    config->bypassEn = ((anaCtrl & PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_BYPASS_EN_MASK) != 0UL);
+    config->ovlPdEn  = ((anaCtrl & PMU_PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG_BUCK_VDDCORE_OVL_PD_EN_MASK) != 0UL);
+
+    uint32_t sensorCtrl0 = base->PMU_SENSOR_CTRL0_REG;
+    config->sensorLowerThres =
+        (pmu_sensor_lower_thres_0v8_t)((sensorCtrl0 & PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD_CORE_LOWER_THRES_MASK) >>
+                                       PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD_CORE_LOWER_THRES_SHIFT);
+    config->sensorUpperThres =
+        (pmu_sensor_upper_thres_0v8_t)((sensorCtrl0 & PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD_CORE_UPPER_THRES_MASK) >>
+                                       PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD_CORE_UPPER_THRES_SHIFT);
+
+    uint32_t irqEnable     = base->PMU_DIG_IRQ_EN_REG;
+    config->irqOnVminError = ((irqEnable & PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDDCORE_VMIN_ERROR_IRQ_EN_MASK) != 0UL);
+    config->irqOnVmaxError = ((irqEnable & PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDDCORE_VMAX_ERROR_IRQ_EN_MASK) != 0UL);
+    config->irqOnClkLost   = ((irqEnable & PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_BUCK_VDDCORE_CLK_LOST_IRQ_EN_MASK) != 0UL);
+    config->irqOnUvlo      = ((irqEnable & PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_BUCK_VDDCORE_IRQ_IRQ_EN_MASK) != 0UL);
+    config->irqOnOclWarn   = ((irqEnable & PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_BUCK_VDDCORE_OCL_WARN_IRQ_EN_MASK) != 0UL);
+
+    uint32_t warmReset = base->PMU_RESETCON_WARM_CTRL;
+    config->warmResetOnVminError =
+        ((warmReset & PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDDCORE_VMIN_ERROR_ASYNC_RESET_WARM_EN_MASK) != 0UL);
+    config->warmResetOnVmaxError =
+        ((warmReset & PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDDCORE_VMAX_ERROR_ASYNC_RESET_WARM_EN_MASK) != 0UL);
+    config->warmResetOnClkLost =
+        ((warmReset & PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_BUCK_VDDCORE_CLK_LOST_ASYNC_RESET_WARM_EN_MASK) != 0UL);
+    config->warmResetOnUvlo =
+        ((warmReset & PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_BUCK_VDDCORE_IRQ_ASYNC_RESET_WARM_EN_MASK) != 0UL);
+    config->warmResetOnOclWarn =
+        ((warmReset & PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_BUCK_VDDCORE_OCL_WARN_ASYNC_RESET_WARM_EN_MASK) != 0UL);
+
+    uint32_t coldReset = base->PMU_RESETCON_COLD_CTRL;
+    config->coldResetOnVminError =
+        ((coldReset & PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDDCORE_VMIN_ERROR_ASYNC_RESET_COLD_EN_MASK) != 0UL);
+    config->coldResetOnVmaxError =
+        ((coldReset & PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDDCORE_VMAX_ERROR_ASYNC_RESET_COLD_EN_MASK) != 0UL);
+    config->coldResetOnClkLost =
+        ((coldReset & PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_BUCK_VDDCORE_CLK_LOST_ASYNC_RESET_COLD_EN_MASK) != 0UL);
+    config->coldResetOnUvlo =
+        ((coldReset & PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_BUCK_VDDCORE_IRQ_ASYNC_RESET_COLD_EN_MASK) != 0UL);
+    config->coldResetOnOclWarn =
+        ((coldReset & PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_BUCK_VDDCORE_OCL_WARN_ASYNC_RESET_COLD_EN_MASK) != 0UL);
 }
 
 void PMU_ConfigDcdcPwmMode(PMU_Type *base, const pmu_dcdc_pwm_config_t *config)
 {
     assert(config != NULL);
 
-    /* Assemble PMU_BUCK_VDDCORE_CTRL_PWM_REG from all PWM mode config fields. */
     uint32_t reg = 0U;
-    /* Analog loop compensation: filter resistor, capacitor, and sawtooth trim. */
-    reg |= ((uint32_t)config->loopFilterResAdj & 0x7U) << PWM_LOOPFILTER_RES_ADJ_SHIFT;
-    reg |= ((uint32_t)config->loopFilterCapAdj & 0x7U) << PWM_LOOPFILTER_CAP_ADJ_SHIFT;
-    reg |= ((uint32_t)config->sawtoothAdj & 0x7U) << PWM_SAWTOOTH_ADJ_SHIFT;
-    reg |= ((uint32_t)config->gmAdj & 0x7U) << PWM_GM_ADJ_SHIFT;
-    /* Gate-driver strength and peak current override flags. */
-    if (config->gmOvlPullupDis)   { reg |= (1UL << PWM_GM_OVL_PULLUP_DIS_POS); }
-    if (config->gmIniCond)        { reg |= (1UL << PWM_GM_INI_COND_POS); }
-    if (config->ipkOvr)           { reg |= (1UL << PWM_IPK_OVR_POS); }
-    /* PWM switching masks and output voltage mode selection fields. */
-    reg |= ((uint32_t)config->pulseSkip & 0x3U) << PWM_PULSESKIP_SHIFT;
-    reg |= ((uint32_t)config->maskPeakP & 0x3U) << PWM_MASK_PEAKP_SHIFT;
-    reg |= ((uint32_t)config->maskSawtooth & 0x3U) << PWM_MASK_SAWTOOTH_SHIFT;
-    reg |= ((uint32_t)config->setPwm & 0x3U) << PWM_SET_PWM_SHIFT;
-    reg |= ((uint32_t)config->maskOcl & 0x3U) << PWM_MASK_OCL_SHIFT;
-    reg |= ((uint32_t)config->maskZcs & 0x3U) << PWM_MASK_ZCS_SHIFT;
-    /* Output voltage step mode and pulse-skip disable flags. */
-    if (config->disPulseSkipping) { reg |= (1UL << PWM_DIS_PULSESKIPING_POS); }
-    if (config->voutSteps)        { reg |= (1UL << PWM_VOUT_STEPS_POS); }
-
+    reg |= PMU_PMU_BUCK_VDDCORE_CTRL_PWM_REG_BUCK_VDDCORE_LOOPFILTER_RES_ADJ(config->loopFilterResAdj);
+    reg |= PMU_PMU_BUCK_VDDCORE_CTRL_PWM_REG_BUCK_VDDCORE_LOOPFILTER_CAP_ADJ(config->loopFilterCapAdj);
+    reg |= PMU_PMU_BUCK_VDDCORE_CTRL_PWM_REG_BUCK_VDDCORE_SAWTOOTH_ADJ(config->sawtoothAdj);
+    reg |= PMU_PMU_BUCK_VDDCORE_CTRL_PWM_REG_BUCK_VDDCORE_GM_ADJ(config->gmAdj);
+    reg |= PMU_PMU_BUCK_VDDCORE_CTRL_PWM_REG_BUCK_VDDCORE_GM_OVL_PULLUP_DIS(config->gmOvlPullupDis ? 1UL : 0UL);
+    reg |= PMU_PMU_BUCK_VDDCORE_CTRL_PWM_REG_BUCK_VDDCORE_GM_INI_COND(config->gmIniCond ? 1UL : 0UL);
+    reg |= PMU_PMU_BUCK_VDDCORE_CTRL_PWM_REG_BUCK_VDDCORE_IPK_OVR(config->ipkOvr ? 1UL : 0UL);
+    reg |= PMU_PMU_BUCK_VDDCORE_CTRL_PWM_REG_BUCK_VDDCORE_PULSESKIP(config->pulseSkip);
+    reg |= PMU_PMU_BUCK_VDDCORE_CTRL_PWM_REG_BUCK_VDDCORE_MASK_PEAKP(config->maskPeakP);
+    reg |= PMU_PMU_BUCK_VDDCORE_CTRL_PWM_REG_BUCK_VDDCORE_MASK_SAWTOOTH(config->maskSawtooth);
+    reg |= PMU_PMU_BUCK_VDDCORE_CTRL_PWM_REG_BUCK_VDDCORE_SET_PWM(config->setPwm);
+    reg |= PMU_PMU_BUCK_VDDCORE_CTRL_PWM_REG_BUCK_VDDCORE_MASK_OCL(config->maskOcl);
+    reg |= PMU_PMU_BUCK_VDDCORE_CTRL_PWM_REG_BUCK_VDDCORE_MASK_ZCS(config->maskZcs);
+    reg |= PMU_PMU_BUCK_VDDCORE_CTRL_PWM_REG_BUCK_VDDCORE_DIS_PULSESKIPING(config->disPulseSkipping ? 1UL : 0UL);
+    reg |= PMU_PMU_BUCK_VDDCORE_CTRL_PWM_REG_BUCK_VDDCORE_VOUT_STEPS(config->voutSteps ? 1UL : 0UL);
     base->PMU_BUCK_VDDCORE_CTRL_PWM_REG = reg;
 }
 
@@ -259,131 +219,244 @@ void PMU_ConfigLdoVdd0V8(PMU_Type *base, const pmu_ldo_vdd0v8_config_t *config)
 {
     assert(config != NULL);
 
-    /* LDO_CTRL_REG: VDD_0V8 fields at bits [11:4]. */
-    uint32_t ldo = base->PMU_LDO_CTRL_REG;
-    ldo &= ~(0xFF0U); /* Clear bits [11:4] */
-    ldo |= ((uint32_t)config->voltSel & 0x3U) << LDO_VDD0V8_SEL_SHIFT;
-    if (config->bypassEn)     { ldo |= (1UL << LDO_VDD0V8_BYPASS_POS); }
-    if (config->limitDisable) { ldo |= (1UL << LDO_VDD0V8_DISILIM_POS); }
-    ldo |= ((uint32_t)config->lpVoltSel & 0x3U) << LDO_VDD0V8_LP_SEL_SHIFT;
-    base->PMU_LDO_CTRL_REG = ldo;
+    uint32_t ldoCtrl = base->PMU_LDO_CTRL_REG;
+    ldoCtrl &= ~(PMU_PMU_LDO_CTRL_REG_PMU_VDD_0V8_SEL_MASK | PMU_PMU_LDO_CTRL_REG_PMU_VDD_0V8_BYPASS_MASK |
+                 PMU_PMU_LDO_CTRL_REG_PMU_VDD_0V8_DISILIM_MASK | PMU_PMU_LDO_CTRL_REG_PMU_LPVDDREG_0V8_SEL_MASK);
+    ldoCtrl |= PMU_PMU_LDO_CTRL_REG_PMU_VDD_0V8_SEL(config->voltSel);
+    ldoCtrl |= PMU_PMU_LDO_CTRL_REG_PMU_VDD_0V8_BYPASS(config->bypassEn ? 1UL : 0UL);
+    ldoCtrl |= PMU_PMU_LDO_CTRL_REG_PMU_VDD_0V8_DISILIM(config->limitDisable ? 1UL : 0UL);
+    ldoCtrl |= PMU_PMU_LDO_CTRL_REG_PMU_LPVDDREG_0V8_SEL(config->lpVoltSel);
+    base->PMU_LDO_CTRL_REG = ldoCtrl;
 
-    /* Sensor thresholds: SENSOR_CTRL0_REG bits [7:4]. */
-    uint32_t sensor0 = base->PMU_SENSOR_CTRL0_REG;
-    sensor0 &= ~(0xF0UL);
-    sensor0 |= ((uint32_t)config->sensorLowerThres & 0x3U) << SENSOR_CTRL0_0V8_LOWER_SHIFT;
-    sensor0 |= ((uint32_t)config->sensorUpperThres & 0x3U) << SENSOR_CTRL0_0V8_UPPER_SHIFT;
-    base->PMU_SENSOR_CTRL0_REG = sensor0;
+    uint32_t sensorCtrl0 = base->PMU_SENSOR_CTRL0_REG;
+    sensorCtrl0 &= ~(PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD0V8_LOWER_THRES_MASK |
+                     PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD0V8_UPPER_THRES_MASK);
+    sensorCtrl0 |= PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD0V8_LOWER_THRES(config->sensorLowerThres);
+    sensorCtrl0 |= PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD0V8_UPPER_THRES(config->sensorUpperThres);
+    base->PMU_SENSOR_CTRL0_REG = sensorCtrl0;
 
-    /* IRQ: VDD_0V8 bits at [6:5] of PMU_DIG_IRQ_EN_REG. */
-    uint32_t irqEn = base->PMU_DIG_IRQ_EN_REG;
-    irqEn &= ~(0x3UL << 5U);
-    if (config->irqOnVmaxError) { irqEn |= (1UL << 5U); }
-    if (config->irqOnVminError) { irqEn |= (1UL << 6U); }
-    base->PMU_DIG_IRQ_EN_REG = irqEn;
+    uint32_t irqEnable = base->PMU_DIG_IRQ_EN_REG;
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDD0V8_VMIN_ERROR_IRQ_EN_MASK,
+                       config->irqOnVminError);
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDD0V8_VMAX_ERROR_IRQ_EN_MASK,
+                       config->irqOnVmaxError);
+    base->PMU_DIG_IRQ_EN_REG = irqEnable;
 
-    /* Warm reset: VDD_0V8 bits at [6:5] of RESETCON_WARM_CTRL. */
-    uint32_t warm = base->PMU_RESETCON_WARM_CTRL;
-    warm &= ~(0x3UL << 5U);
-    if (config->warmResetOnVmaxError) { warm |= (1UL << 5U); }
-    if (config->warmResetOnVminError) { warm |= (1UL << 6U); }
-    base->PMU_RESETCON_WARM_CTRL = warm;
+    uint32_t warmReset = base->PMU_RESETCON_WARM_CTRL;
+    PMU_SetOrClearBits(&warmReset, PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDD0V8_VMIN_ERROR_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnVminError);
+    PMU_SetOrClearBits(&warmReset, PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDD0V8_VMAX_ERROR_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnVmaxError);
+    base->PMU_RESETCON_WARM_CTRL = warmReset;
 
-    /* Cold reset: VDD_0V8 bits at [6:5] of RESETCON_COLD_CTRL. */
-    uint32_t cold = base->PMU_RESETCON_COLD_CTRL;
-    cold &= ~(0x3UL << 5U);
-    if (config->coldResetOnVmaxError) { cold |= (1UL << 5U); }
-    if (config->coldResetOnVminError) { cold |= (1UL << 6U); }
-    base->PMU_RESETCON_COLD_CTRL = cold;
+    uint32_t coldReset = base->PMU_RESETCON_COLD_CTRL;
+    PMU_SetOrClearBits(&coldReset, PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDD0V8_VMIN_ERROR_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnVminError);
+    PMU_SetOrClearBits(&coldReset, PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDD0V8_VMAX_ERROR_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnVmaxError);
+    base->PMU_RESETCON_COLD_CTRL = coldReset;
+}
+
+void PMU_GetLdoVdd0V8Config(PMU_Type *base, pmu_ldo_vdd0v8_config_t *config)
+{
+    assert(config != NULL);
+
+    uint32_t ldoCtrl     = base->PMU_LDO_CTRL_REG;
+    config->voltSel      = (pmu_ldo_volt_sel_t)((ldoCtrl & PMU_PMU_LDO_CTRL_REG_PMU_VDD_0V8_SEL_MASK) >>
+                                           PMU_PMU_LDO_CTRL_REG_PMU_VDD_0V8_SEL_SHIFT);
+    config->lpVoltSel    = (pmu_ldo_volt_sel_t)((ldoCtrl & PMU_PMU_LDO_CTRL_REG_PMU_LPVDDREG_0V8_SEL_MASK) >>
+                                             PMU_PMU_LDO_CTRL_REG_PMU_LPVDDREG_0V8_SEL_SHIFT);
+    config->bypassEn     = ((ldoCtrl & PMU_PMU_LDO_CTRL_REG_PMU_VDD_0V8_BYPASS_MASK) != 0UL);
+    config->limitDisable = ((ldoCtrl & PMU_PMU_LDO_CTRL_REG_PMU_VDD_0V8_DISILIM_MASK) != 0UL);
+
+    uint32_t sensorCtrl0 = base->PMU_SENSOR_CTRL0_REG;
+    config->sensorLowerThres =
+        (pmu_sensor_lower_thres_0v8_t)((sensorCtrl0 & PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD0V8_LOWER_THRES_MASK) >>
+                                       PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD0V8_LOWER_THRES_SHIFT);
+    config->sensorUpperThres =
+        (pmu_sensor_upper_thres_0v8_t)((sensorCtrl0 & PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD0V8_UPPER_THRES_MASK) >>
+                                       PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD0V8_UPPER_THRES_SHIFT);
+
+    uint32_t irqEnable     = base->PMU_DIG_IRQ_EN_REG;
+    config->irqOnVminError = ((irqEnable & PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDD0V8_VMIN_ERROR_IRQ_EN_MASK) != 0UL);
+    config->irqOnVmaxError = ((irqEnable & PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDD0V8_VMAX_ERROR_IRQ_EN_MASK) != 0UL);
+
+    uint32_t warmReset = base->PMU_RESETCON_WARM_CTRL;
+    config->warmResetOnVminError =
+        ((warmReset & PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDD0V8_VMIN_ERROR_ASYNC_RESET_WARM_EN_MASK) != 0UL);
+    config->warmResetOnVmaxError =
+        ((warmReset & PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDD0V8_VMAX_ERROR_ASYNC_RESET_WARM_EN_MASK) != 0UL);
+
+    uint32_t coldReset = base->PMU_RESETCON_COLD_CTRL;
+    config->coldResetOnVminError =
+        ((coldReset & PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDD0V8_VMIN_ERROR_ASYNC_RESET_COLD_EN_MASK) != 0UL);
+    config->coldResetOnVmaxError =
+        ((coldReset & PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDD0V8_VMAX_ERROR_ASYNC_RESET_COLD_EN_MASK) != 0UL);
 }
 
 void PMU_ConfigLdoVdd1V8(PMU_Type *base, const pmu_ldo_vdd1v8_config_t *config)
 {
     assert(config != NULL);
 
-    /* Configure VDD_1V8 LDO: voltage, LP voltage, sensor thresholds, IRQ, and reset settings. */
-    /* LDO_CTRL_REG: VDD_1V8 fields at bits [2:0] and [9:8]. */
-    uint32_t ldo = base->PMU_LDO_CTRL_REG;
-    ldo &= ~(0x307U); /* Clear bits [2:0] and [9:8] */
-    ldo |= ((uint32_t)config->voltSel & 0x3U) << LDO_VDD1V8_SEL_SHIFT;
-    if (config->bypassEn) { ldo |= (1UL << LDO_VDD1V8_BYPASS_POS); }
-    ldo |= ((uint32_t)config->lpVoltSel & 0x3U) << LDO_VDD1V8_LP_SEL_SHIFT;
-    base->PMU_LDO_CTRL_REG = ldo;
+    /* VDD_1V8_DISILIM has no config field, so it keeps its current value. */
+    uint32_t ldoCtrl = base->PMU_LDO_CTRL_REG;
+    ldoCtrl &= ~(PMU_PMU_LDO_CTRL_REG_PMU_VDD_1V8_SEL_MASK | PMU_PMU_LDO_CTRL_REG_PMU_VDD_1V8_BYPASS_MASK |
+                 PMU_PMU_LDO_CTRL_REG_PMU_LPVDDREG_1V8_SEL_MASK);
+    ldoCtrl |= PMU_PMU_LDO_CTRL_REG_PMU_VDD_1V8_SEL(config->voltSel);
+    ldoCtrl |= PMU_PMU_LDO_CTRL_REG_PMU_VDD_1V8_BYPASS(config->bypassEn ? 1UL : 0UL);
+    ldoCtrl |= PMU_PMU_LDO_CTRL_REG_PMU_LPVDDREG_1V8_SEL(config->lpVoltSel);
+    base->PMU_LDO_CTRL_REG = ldoCtrl;
 
-    /* Sensor thresholds: SENSOR_CTRL0_REG bits [11:8]. */
-    uint32_t sensor0 = base->PMU_SENSOR_CTRL0_REG;
-    sensor0 &= ~(0xF00UL);
-    sensor0 |= ((uint32_t)config->sensorLowerThres & 0x3U) << SENSOR_CTRL0_1V8_LOWER_SHIFT;
-    sensor0 |= ((uint32_t)config->sensorUpperThres & 0x3U) << SENSOR_CTRL0_1V8_UPPER_SHIFT;
-    base->PMU_SENSOR_CTRL0_REG = sensor0;
+    uint32_t sensorCtrl0 = base->PMU_SENSOR_CTRL0_REG;
+    sensorCtrl0 &= ~(PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD1V8_LOWER_THRES_MASK |
+                     PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD1V8_UPPER_THRES_MASK);
+    sensorCtrl0 |= PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD1V8_LOWER_THRES(config->sensorLowerThres);
+    sensorCtrl0 |= PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD1V8_UPPER_THRES(config->sensorUpperThres);
+    base->PMU_SENSOR_CTRL0_REG = sensorCtrl0;
 
-    /* IRQ: VDD_1V8 bits at [9:7] of PMU_DIG_IRQ_EN_REG. */
-    /* Clear VDD_1V8 IRQ bits; preserve all other interrupt enables. */
-    uint32_t irqEn = base->PMU_DIG_IRQ_EN_REG;
-    irqEn &= ~(0x7UL << 7U);
-    if (config->irqOnMonitorOk) { irqEn |= (1UL << 7U); }
-    if (config->irqOnVmaxError) { irqEn |= (1UL << 8U); }
-    if (config->irqOnVminError) { irqEn |= (1UL << 9U); }
-    base->PMU_DIG_IRQ_EN_REG = irqEn;
+    uint32_t irqEnable = base->PMU_DIG_IRQ_EN_REG;
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDD1V8_VMIN_ERROR_IRQ_EN_MASK,
+                       config->irqOnVminError);
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDD1V8_VMAX_ERROR_IRQ_EN_MASK,
+                       config->irqOnVmaxError);
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_MONITOR_VDD1V8_OK_IRQ_EN_MASK,
+                       config->irqOnMonitorOk);
+    base->PMU_DIG_IRQ_EN_REG = irqEnable;
 
-    /* Warm reset: VDD_1V8 bits at [9:7] of RESETCON_WARM_CTRL. */
-    uint32_t warm = base->PMU_RESETCON_WARM_CTRL;
-    warm &= ~(0x7UL << 7U);
-    if (config->warmResetOnMonitorOk) { warm |= (1UL << 7U); }
-    if (config->warmResetOnVmaxError) { warm |= (1UL << 8U); }
-    if (config->warmResetOnVminError) { warm |= (1UL << 9U); }
-    base->PMU_RESETCON_WARM_CTRL = warm;
+    uint32_t warmReset = base->PMU_RESETCON_WARM_CTRL;
+    PMU_SetOrClearBits(&warmReset, PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDD1V8_VMIN_ERROR_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnVminError);
+    PMU_SetOrClearBits(&warmReset, PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDD1V8_VMAX_ERROR_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnVmaxError);
+    PMU_SetOrClearBits(&warmReset, PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_MONITOR_VDD1V8_OK_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnMonitorOk);
+    base->PMU_RESETCON_WARM_CTRL = warmReset;
 
-    /* Cold reset: VDD_1V8 bits at [9:7] of RESETCON_COLD_CTRL. */
-    uint32_t cold = base->PMU_RESETCON_COLD_CTRL;
-    cold &= ~(0x7UL << 7U);
-    if (config->coldResetOnMonitorOk) { cold |= (1UL << 7U); }
-    if (config->coldResetOnVmaxError) { cold |= (1UL << 8U); }
-    if (config->coldResetOnVminError) { cold |= (1UL << 9U); }
-    base->PMU_RESETCON_COLD_CTRL = cold;
+    uint32_t coldReset = base->PMU_RESETCON_COLD_CTRL;
+    PMU_SetOrClearBits(&coldReset, PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDD1V8_VMIN_ERROR_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnVminError);
+    PMU_SetOrClearBits(&coldReset, PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDD1V8_VMAX_ERROR_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnVmaxError);
+    PMU_SetOrClearBits(&coldReset, PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_MONITOR_VDD1V8_OK_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnMonitorOk);
+    base->PMU_RESETCON_COLD_CTRL = coldReset;
+}
+
+void PMU_GetLdoVdd1V8Config(PMU_Type *base, pmu_ldo_vdd1v8_config_t *config)
+{
+    assert(config != NULL);
+
+    uint32_t ldoCtrl  = base->PMU_LDO_CTRL_REG;
+    config->voltSel   = (pmu_ldo_volt_sel_t)((ldoCtrl & PMU_PMU_LDO_CTRL_REG_PMU_VDD_1V8_SEL_MASK) >>
+                                           PMU_PMU_LDO_CTRL_REG_PMU_VDD_1V8_SEL_SHIFT);
+    config->lpVoltSel = (pmu_ldo_volt_sel_t)((ldoCtrl & PMU_PMU_LDO_CTRL_REG_PMU_LPVDDREG_1V8_SEL_MASK) >>
+                                             PMU_PMU_LDO_CTRL_REG_PMU_LPVDDREG_1V8_SEL_SHIFT);
+    config->bypassEn  = ((ldoCtrl & PMU_PMU_LDO_CTRL_REG_PMU_VDD_1V8_BYPASS_MASK) != 0UL);
+
+    uint32_t sensorCtrl0 = base->PMU_SENSOR_CTRL0_REG;
+    config->sensorLowerThres =
+        (pmu_sensor_lower_thres_1v8_t)((sensorCtrl0 & PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD1V8_LOWER_THRES_MASK) >>
+                                       PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD1V8_LOWER_THRES_SHIFT);
+    config->sensorUpperThres =
+        (pmu_sensor_upper_thres_1v8_t)((sensorCtrl0 & PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD1V8_UPPER_THRES_MASK) >>
+                                       PMU_PMU_SENSOR_CTRL0_REG_PMU_SENSOR_VDD1V8_UPPER_THRES_SHIFT);
+
+    uint32_t irqEnable     = base->PMU_DIG_IRQ_EN_REG;
+    config->irqOnVminError = ((irqEnable & PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDD1V8_VMIN_ERROR_IRQ_EN_MASK) != 0UL);
+    config->irqOnVmaxError = ((irqEnable & PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDD1V8_VMAX_ERROR_IRQ_EN_MASK) != 0UL);
+    config->irqOnMonitorOk = ((irqEnable & PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_MONITOR_VDD1V8_OK_IRQ_EN_MASK) != 0UL);
+
+    uint32_t warmReset = base->PMU_RESETCON_WARM_CTRL;
+    config->warmResetOnVminError =
+        ((warmReset & PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDD1V8_VMIN_ERROR_ASYNC_RESET_WARM_EN_MASK) != 0UL);
+    config->warmResetOnVmaxError =
+        ((warmReset & PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDD1V8_VMAX_ERROR_ASYNC_RESET_WARM_EN_MASK) != 0UL);
+    config->warmResetOnMonitorOk =
+        ((warmReset & PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_MONITOR_VDD1V8_OK_ASYNC_RESET_WARM_EN_MASK) != 0UL);
+
+    uint32_t coldReset = base->PMU_RESETCON_COLD_CTRL;
+    config->coldResetOnVminError =
+        ((coldReset & PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDD1V8_VMIN_ERROR_ASYNC_RESET_COLD_EN_MASK) != 0UL);
+    config->coldResetOnVmaxError =
+        ((coldReset & PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDD1V8_VMAX_ERROR_ASYNC_RESET_COLD_EN_MASK) != 0UL);
+    config->coldResetOnMonitorOk =
+        ((coldReset & PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_MONITOR_VDD1V8_OK_ASYNC_RESET_COLD_EN_MASK) != 0UL);
 }
 
 void PMU_ConfigLdoVdda1V8(PMU_Type *base, const pmu_ldo_vdda1v8_config_t *config)
 {
     assert(config != NULL);
 
-    /* Configure VDDA_1V8 LDO: voltage, sensor thresholds, IRQ, and reset settings. */
-    /* LDO_CTRL_REG: VDDA_1V8 fields at bits [15:12]. */
-    uint32_t ldo = base->PMU_LDO_CTRL_REG;
-    ldo &= ~(0xF000UL);
-    ldo |= ((uint32_t)config->voltSel & 0x3U) << LDO_VDDA1V8_SEL_SHIFT;
-    if (config->bypassEn)     { ldo |= (1UL << LDO_VDDA1V8_BYPASS_POS); }
-    if (config->limitDisable) { ldo |= (1UL << LDO_VDDA1V8_DISILIM_POS); }
-    base->PMU_LDO_CTRL_REG = ldo;
+    uint32_t ldoCtrl = base->PMU_LDO_CTRL_REG;
+    ldoCtrl &= ~(PMU_PMU_LDO_CTRL_REG_PMU_VDDA_1V8_SEL_MASK | PMU_PMU_LDO_CTRL_REG_PMU_VDDA_1V8_BYPASS_MASK |
+                 PMU_PMU_LDO_CTRL_REG_PMU_VDDA_1V8_DISILIM_MASK);
+    ldoCtrl |= PMU_PMU_LDO_CTRL_REG_PMU_VDDA_1V8_SEL(config->voltSel);
+    ldoCtrl |= PMU_PMU_LDO_CTRL_REG_PMU_VDDA_1V8_BYPASS(config->bypassEn ? 1UL : 0UL);
+    ldoCtrl |= PMU_PMU_LDO_CTRL_REG_PMU_VDDA_1V8_DISILIM(config->limitDisable ? 1UL : 0UL);
+    base->PMU_LDO_CTRL_REG = ldoCtrl;
 
-    /* Sensor thresholds: SENSOR_CTRL0_REG bits [15:12]. */
-    uint32_t sensor0 = base->PMU_SENSOR_CTRL0_REG;
-    sensor0 &= ~(0xF000UL);
-    sensor0 |= ((uint32_t)config->sensorLowerThres & 0x3U) << SENSOR_CTRL0_VDDA_LOWER_SHIFT;
-    sensor0 |= ((uint32_t)config->sensorUpperThres & 0x3U) << SENSOR_CTRL0_VDDA_UPPER_SHIFT;
-    base->PMU_SENSOR_CTRL0_REG = sensor0;
+    uint32_t sensorCtrl1 = base->PMU_SENSOR_CTRL1_REG;
+    sensorCtrl1 &= ~(PMU_PMU_SENSOR_CTRL1_REG_PMU_SENSOR_VDDA1V8_LOWER_THRES_MASK |
+                     PMU_PMU_SENSOR_CTRL1_REG_PMU_SENSOR_VDDA1V8_UPPER_THRES_MASK);
+    sensorCtrl1 |= PMU_PMU_SENSOR_CTRL1_REG_PMU_SENSOR_VDDA1V8_LOWER_THRES(config->sensorLowerThres);
+    sensorCtrl1 |= PMU_PMU_SENSOR_CTRL1_REG_PMU_SENSOR_VDDA1V8_UPPER_THRES(config->sensorUpperThres);
+    base->PMU_SENSOR_CTRL1_REG = sensorCtrl1;
 
-    /* IRQ: VDDA_1V8 bits at [11:10] of PMU_DIG_IRQ_EN_REG. */
-    /* Clear VDDA_1V8 IRQ bits; preserve all other interrupt enables. */
-    uint32_t irqEn = base->PMU_DIG_IRQ_EN_REG;
-    irqEn &= ~(0x3UL << 10U);
-    if (config->irqOnVmaxError) { irqEn |= (1UL << 10U); }
-    if (config->irqOnVminError) { irqEn |= (1UL << 11U); }
-    base->PMU_DIG_IRQ_EN_REG = irqEn;
+    uint32_t irqEnable = base->PMU_DIG_IRQ_EN_REG;
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDDA1V8_VMIN_ERROR_IRQ_EN_MASK,
+                       config->irqOnVminError);
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDDA1V8_VMAX_ERROR_IRQ_EN_MASK,
+                       config->irqOnVmaxError);
+    base->PMU_DIG_IRQ_EN_REG = irqEnable;
 
-    /* Warm reset: VDDA_1V8 bits at [11:10] of RESETCON_WARM_CTRL. */
-    uint32_t warm = base->PMU_RESETCON_WARM_CTRL;
-    warm &= ~(0x3UL << 10U);
-    if (config->warmResetOnVmaxError) { warm |= (1UL << 10U); }
-    if (config->warmResetOnVminError) { warm |= (1UL << 11U); }
-    base->PMU_RESETCON_WARM_CTRL = warm;
+    uint32_t warmReset = base->PMU_RESETCON_WARM_CTRL;
+    PMU_SetOrClearBits(&warmReset, PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDDA1V8_VMIN_ERROR_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnVminError);
+    PMU_SetOrClearBits(&warmReset, PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDDA1V8_VMAX_ERROR_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnVmaxError);
+    base->PMU_RESETCON_WARM_CTRL = warmReset;
 
-    /* Cold reset: VDDA_1V8 bits at [11:10] of RESETCON_COLD_CTRL. */
-    uint32_t cold = base->PMU_RESETCON_COLD_CTRL;
-    cold &= ~(0x3UL << 10U);
-    if (config->coldResetOnVmaxError) { cold |= (1UL << 10U); }
-    if (config->coldResetOnVminError) { cold |= (1UL << 11U); }
-    base->PMU_RESETCON_COLD_CTRL = cold;
+    uint32_t coldReset = base->PMU_RESETCON_COLD_CTRL;
+    PMU_SetOrClearBits(&coldReset, PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDDA1V8_VMIN_ERROR_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnVminError);
+    PMU_SetOrClearBits(&coldReset, PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDDA1V8_VMAX_ERROR_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnVmaxError);
+    base->PMU_RESETCON_COLD_CTRL = coldReset;
+}
+
+void PMU_GetLdoVdda1V8Config(PMU_Type *base, pmu_ldo_vdda1v8_config_t *config)
+{
+    assert(config != NULL);
+
+    uint32_t ldoCtrl     = base->PMU_LDO_CTRL_REG;
+    config->voltSel      = (pmu_ldo_volt_sel_t)((ldoCtrl & PMU_PMU_LDO_CTRL_REG_PMU_VDDA_1V8_SEL_MASK) >>
+                                           PMU_PMU_LDO_CTRL_REG_PMU_VDDA_1V8_SEL_SHIFT);
+    config->bypassEn     = ((ldoCtrl & PMU_PMU_LDO_CTRL_REG_PMU_VDDA_1V8_BYPASS_MASK) != 0UL);
+    config->limitDisable = ((ldoCtrl & PMU_PMU_LDO_CTRL_REG_PMU_VDDA_1V8_DISILIM_MASK) != 0UL);
+
+    uint32_t sensorCtrl1 = base->PMU_SENSOR_CTRL1_REG;
+    config->sensorLowerThres =
+        (pmu_sensor_lower_thres_1v8_t)((sensorCtrl1 & PMU_PMU_SENSOR_CTRL1_REG_PMU_SENSOR_VDDA1V8_LOWER_THRES_MASK) >>
+                                       PMU_PMU_SENSOR_CTRL1_REG_PMU_SENSOR_VDDA1V8_LOWER_THRES_SHIFT);
+    config->sensorUpperThres =
+        (pmu_sensor_upper_thres_1v8_t)((sensorCtrl1 & PMU_PMU_SENSOR_CTRL1_REG_PMU_SENSOR_VDDA1V8_UPPER_THRES_MASK) >>
+                                       PMU_PMU_SENSOR_CTRL1_REG_PMU_SENSOR_VDDA1V8_UPPER_THRES_SHIFT);
+
+    uint32_t irqEnable     = base->PMU_DIG_IRQ_EN_REG;
+    config->irqOnVminError = ((irqEnable & PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDDA1V8_VMIN_ERROR_IRQ_EN_MASK) != 0UL);
+    config->irqOnVmaxError = ((irqEnable & PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDDA1V8_VMAX_ERROR_IRQ_EN_MASK) != 0UL);
+
+    uint32_t warmReset = base->PMU_RESETCON_WARM_CTRL;
+    config->warmResetOnVminError =
+        ((warmReset & PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDDA1V8_VMIN_ERROR_ASYNC_RESET_WARM_EN_MASK) != 0UL);
+    config->warmResetOnVmaxError =
+        ((warmReset & PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDDA1V8_VMAX_ERROR_ASYNC_RESET_WARM_EN_MASK) != 0UL);
+
+    uint32_t coldReset = base->PMU_RESETCON_COLD_CTRL;
+    config->coldResetOnVminError =
+        ((coldReset & PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDDA1V8_VMIN_ERROR_ASYNC_RESET_COLD_EN_MASK) != 0UL);
+    config->coldResetOnVmaxError =
+        ((coldReset & PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDDA1V8_VMAX_ERROR_ASYNC_RESET_COLD_EN_MASK) != 0UL);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -394,48 +467,63 @@ void PMU_ConfigVddPmu(PMU_Type *base, const pmu_vdd_pmu_config_t *config)
 {
     assert(config != NULL);
 
-    /* Configure VDD_PMU voltage monitor: sensor thresholds, interrupt, and reset settings. */
-    /* Sensor thresholds: SENSOR_CTRL1_REG bits [7:0]. */
-    uint32_t sensor1 = base->PMU_SENSOR_CTRL1_REG;
-    sensor1 &= ~(0xFFUL);
-    /* Two threshold fields each for PMU_1V8 and PMU_3V (lower and upper limits). */
-    sensor1 |= ((uint32_t)config->sensor1V8LowerThres & 0x3U) << SENSOR_CTRL1_PMU1V8_LOWER_SHIFT;
-    sensor1 |= ((uint32_t)config->sensor1V8UpperThres & 0x3U) << SENSOR_CTRL1_PMU1V8_UPPER_SHIFT;
-    sensor1 |= ((uint32_t)config->sensor3VLowerThres & 0x3U) << SENSOR_CTRL1_PMU3V_LOWER_SHIFT;
-    sensor1 |= ((uint32_t)config->sensor3VUpperThres & 0x3U) << SENSOR_CTRL1_PMU3V_UPPER_SHIFT;
-    base->PMU_SENSOR_CTRL1_REG = sensor1;
+    uint32_t sensorCtrl1 = base->PMU_SENSOR_CTRL1_REG;
+    sensorCtrl1 &= ~(PMU_PMU_SENSOR_CTRL1_REG_PMU_SENSOR_VDD_PMU3V_LOWER_THRES_MASK |
+                     PMU_PMU_SENSOR_CTRL1_REG_PMU_SENSOR_VDD_PMU3V_UPPER_THRES_MASK |
+                     PMU_PMU_SENSOR_CTRL1_REG_PMU_SENSOR_VDD_PMU1V8_LOWER_THRES_MASK |
+                     PMU_PMU_SENSOR_CTRL1_REG_PMU_SENSOR_VDD_PMU1V8_UPPER_THRES_MASK);
+    sensorCtrl1 |= PMU_PMU_SENSOR_CTRL1_REG_PMU_SENSOR_VDD_PMU3V_LOWER_THRES(config->sensor3VLowerThres);
+    sensorCtrl1 |= PMU_PMU_SENSOR_CTRL1_REG_PMU_SENSOR_VDD_PMU3V_UPPER_THRES(config->sensor3VUpperThres);
+    sensorCtrl1 |= PMU_PMU_SENSOR_CTRL1_REG_PMU_SENSOR_VDD_PMU1V8_LOWER_THRES(config->sensor1V8LowerThres);
+    sensorCtrl1 |= PMU_PMU_SENSOR_CTRL1_REG_PMU_SENSOR_VDD_PMU1V8_UPPER_THRES(config->sensor1V8UpperThres);
+    base->PMU_SENSOR_CTRL1_REG = sensorCtrl1;
 
-    /* IRQ: VDD_PMU bits at [16:12] of PMU_DIG_IRQ_EN_REG. */
-    /* Five sources: 3V monitor OK, sensor 1V8 max/min, sensor 3V max/min. */
-    uint32_t irqEn = base->PMU_DIG_IRQ_EN_REG;
-    irqEn &= ~(0x1FUL << 12U);
-    if (config->irqOnMonitor3VOk)        { irqEn |= (1UL << 12U); }
-    if (config->irqOnSensor1V8VmaxError) { irqEn |= (1UL << 13U); }
-    if (config->irqOnSensor1V8VminError) { irqEn |= (1UL << 14U); }
-    if (config->irqOnSensor3VVmaxError)  { irqEn |= (1UL << 15U); }
-    if (config->irqOnSensor3VVminError)  { irqEn |= (1UL << 16U); }
-    base->PMU_DIG_IRQ_EN_REG = irqEn;
+    uint32_t irqEnable = base->PMU_DIG_IRQ_EN_REG;
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_MONITOR_VDDPMU_3V_OK_IRQ_EN_MASK,
+                       config->irqOnMonitor3VOk);
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDD_PMU1V8_VMAX_ERROR_IRQ_EN_MASK,
+                       config->irqOnSensor1V8VmaxError);
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDD_PMU1V8_VMIN_ERROR_IRQ_EN_MASK,
+                       config->irqOnSensor1V8VminError);
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDD_PMU3V_VMAX_ERROR_IRQ_EN_MASK,
+                       config->irqOnSensor3VVmaxError);
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_SENSE_VDD_PMU3V_VMIN_ERROR_IRQ_EN_MASK,
+                       config->irqOnSensor3VVminError);
+    base->PMU_DIG_IRQ_EN_REG = irqEnable;
 
-    /* Warm reset: VDD_PMU bits at [16:12] of RESETCON_WARM_CTRL. */
-    /* Same five sources as IRQ, mapped to warm-reset trigger register. */
-    uint32_t warm = base->PMU_RESETCON_WARM_CTRL;
-    warm &= ~(0x1FUL << 12U);
-    if (config->warmResetOnMonitor3VOk)        { warm |= (1UL << 12U); }
-    if (config->warmResetOnSensor1V8VmaxError) { warm |= (1UL << 13U); }
-    if (config->warmResetOnSensor1V8VminError) { warm |= (1UL << 14U); }
-    if (config->warmResetOnSensor3VVmaxError)  { warm |= (1UL << 15U); }
-    if (config->warmResetOnSensor3VVminError)  { warm |= (1UL << 16U); }
-    base->PMU_RESETCON_WARM_CTRL = warm;
+    uint32_t warmReset = base->PMU_RESETCON_WARM_CTRL;
+    PMU_SetOrClearBits(&warmReset, PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_MONITOR_VDDPMU_3V_OK_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnMonitor3VOk);
+    PMU_SetOrClearBits(&warmReset,
+                       PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDD_PMU1V8_VMAX_ERROR_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnSensor1V8VmaxError);
+    PMU_SetOrClearBits(&warmReset,
+                       PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDD_PMU1V8_VMIN_ERROR_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnSensor1V8VminError);
+    PMU_SetOrClearBits(&warmReset,
+                       PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDD_PMU3V_VMAX_ERROR_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnSensor3VVmaxError);
+    PMU_SetOrClearBits(&warmReset,
+                       PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_SENSE_VDD_PMU3V_VMIN_ERROR_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnSensor3VVminError);
+    base->PMU_RESETCON_WARM_CTRL = warmReset;
 
-    /* Cold reset: VDD_PMU bits at [16:12] of RESETCON_COLD_CTRL. */
-    uint32_t cold = base->PMU_RESETCON_COLD_CTRL;
-    cold &= ~(0x1FUL << 12U);
-    if (config->coldResetOnMonitor3VOk)        { cold |= (1UL << 12U); }
-    if (config->coldResetOnSensor1V8VmaxError) { cold |= (1UL << 13U); }
-    if (config->coldResetOnSensor1V8VminError) { cold |= (1UL << 14U); }
-    if (config->coldResetOnSensor3VVmaxError)  { cold |= (1UL << 15U); }
-    if (config->coldResetOnSensor3VVminError)  { cold |= (1UL << 16U); }
-    base->PMU_RESETCON_COLD_CTRL = cold;
+    uint32_t coldReset = base->PMU_RESETCON_COLD_CTRL;
+    PMU_SetOrClearBits(&coldReset, PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_MONITOR_VDDPMU_3V_OK_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnMonitor3VOk);
+    PMU_SetOrClearBits(&coldReset,
+                       PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDD_PMU1V8_VMAX_ERROR_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnSensor1V8VmaxError);
+    PMU_SetOrClearBits(&coldReset,
+                       PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDD_PMU1V8_VMIN_ERROR_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnSensor1V8VminError);
+    PMU_SetOrClearBits(&coldReset,
+                       PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDD_PMU3V_VMAX_ERROR_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnSensor3VVmaxError);
+    PMU_SetOrClearBits(&coldReset,
+                       PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_SENSE_VDD_PMU3V_VMIN_ERROR_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnSensor3VVminError);
+    base->PMU_RESETCON_COLD_CTRL = coldReset;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -446,19 +534,31 @@ void PMU_ConfigBodyBias(PMU_Type *base, const pmu_body_bias_config_t *config)
 {
     assert(config != NULL);
 
-    uint32_t reg = 0U;
-    reg |= ((uint32_t)config->mode & BB_MODE_MASK) << BB_MODE_SHIFT;
-    reg |= ((uint32_t)config->pwellClkSel & 0x3U) << BB_PWELL_CLK_SHIFT;
-    reg |= ((uint32_t)config->rampClkSel & 0x3U) << BB_RAMP_CLK_SHIFT;
-    if (config->advcEnable) { reg |= (1UL << BB_ADVC_EN_POS); }
-    reg |= ((uint32_t)config->nwellVolSel & 0x7FU) << BB_NWELL_VOL_SHIFT;
-    reg |= ((uint32_t)config->pwellVolSel & 0x7FU) << BB_PWELL_VOL_SHIFT;
+    /* Fields this call always owns. NWELL_VOL/PWELL_VOL are added to the mask only when
+     * PMU_DRIVER_UPDATE_TRIM_VALUE is enabled; otherwise this is a read-modify-write that
+     * never clobbers whatever well-bias trim is already latched into the register (e.g. ROM). */
+    uint32_t ownedFieldsMask =
+        PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_MODE_SEL_MASK | PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_PWELL_CLK_SEL_MASK |
+        PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_RAMP_CLK_SEL_MASK | PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_ADVC_MASK;
+#if PMU_DRIVER_UPDATE_TRIM_VALUE
+    ownedFieldsMask |=
+        PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_NWELL_V_SEL_MASK | PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_PWELL_V_SEL_MASK;
+#endif /* PMU_DRIVER_UPDATE_TRIM_VALUE */
+
+    uint32_t reg = base->PMU_BODYBIAS_CONFIG_REG & ~ownedFieldsMask;
+    reg |= PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_MODE_SEL(config->mode);
+    reg |= PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_PWELL_CLK_SEL(config->pwellClkSel);
+    reg |= PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_RAMP_CLK_SEL(config->rampClkSel);
+    reg |= PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_ADVC(config->advcEnable ? 1UL : 0UL);
+#if PMU_DRIVER_UPDATE_TRIM_VALUE
+    reg |= PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_NWELL_V_SEL(config->nwellVolSel);
+    reg |= PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_PWELL_V_SEL(config->pwellVolSel);
+#endif /* PMU_DRIVER_UPDATE_TRIM_VALUE */
     base->PMU_BODYBIAS_CONFIG_REG = reg;
 
-    /* Interrupt enable register. */
     uint32_t intEn = 0U;
-    if (config->irqOnCfgDone)  { intEn |= (1UL << 0U); }
-    if (config->irqOnCfgError) { intEn |= (1UL << 1U); }
+    intEn |= PMU_PMU_BODYBIAS_INTENABLE_REG_PMU_BB_ENA_CFG_DONE(config->irqOnCfgDone ? 1UL : 0UL);
+    intEn |= PMU_PMU_BODYBIAS_INTENABLE_REG_PMU_BB_ENA_CFG_ERROR(config->irqOnCfgError ? 1UL : 0UL);
     base->PMU_BODYBIAS_INTENABLE_REG = intEn;
 }
 
@@ -467,15 +567,14 @@ status_t PMU_ApplyBodyBiasBlocking(PMU_Type *base)
     uint32_t configReg = base->PMU_BODYBIAS_CONFIG_REG;
     pmu_body_bias_config_t appliedConfig;
 
-    appliedConfig.mode        = (pmu_body_bias_mode_t)((configReg >> BB_MODE_SHIFT) & BB_MODE_MASK);
-    appliedConfig.nwellVolSel = (uint8_t)((configReg & BB_NWELL_VOL_MASK) >> BB_NWELL_VOL_SHIFT);
-    appliedConfig.pwellVolSel = (uint8_t)((configReg & BB_PWELL_VOL_MASK) >> BB_PWELL_VOL_SHIFT);
+    appliedConfig.mode        = (pmu_body_bias_mode_t)((configReg & PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_MODE_SEL_MASK) >>
+                                                PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_MODE_SEL_SHIFT);
+    appliedConfig.nwellVolSel = (uint8_t)((configReg & PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_NWELL_V_SEL_MASK) >>
+                                          PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_NWELL_V_SEL_SHIFT);
+    appliedConfig.pwellVolSel = (uint8_t)((configReg & PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_PWELL_V_SEL_MASK) >>
+                                          PMU_PMU_BODYBIAS_CONFIG_REG_PMU_BB_PWELL_V_SEL_SHIFT);
 
-    /* Clear previous status. */
-    base->PMU_BODYBIAS_INTCLEAR_REG = 0x3U;
-
-    /* Issue update command. */
-    base->PMU_BODYBIAS_COMMAND_REG = BB_CMD_UPDATE;
+    PMU_ApplyBodyBiasNonBlocking(base);
 
     /* Poll for completion or error. */
 #if PMU_BB_UPDATE_TIMEOUT
@@ -484,11 +583,11 @@ status_t PMU_ApplyBodyBiasBlocking(PMU_Type *base)
     while (true)
     {
         uint32_t sts = base->PMU_BODYBIAS_INTSTATUS_STS;
-        if ((sts & (1UL << 1U)) != 0UL)
+        if ((sts & PMU_PMU_BODYBIAS_INTSTATUS_STS_PMU_BB_CFG_ERROR_MASK) != 0UL)
         {
             return kStatus_Fail; /* Error */
         }
-        if ((sts & (1UL << 0U)) != 0UL)
+        if ((sts & PMU_PMU_BODYBIAS_INTSTATUS_STS_PMU_BB_CFG_DONE_MASK) != 0UL)
         {
             break; /* Done */
         }
@@ -518,8 +617,9 @@ status_t PMU_ApplyBodyBiasBlocking(PMU_Type *base)
 
 void PMU_ApplyBodyBiasNonBlocking(PMU_Type *base)
 {
-    base->PMU_BODYBIAS_INTCLEAR_REG = 0x3U;
-    base->PMU_BODYBIAS_COMMAND_REG  = BB_CMD_UPDATE;
+    base->PMU_BODYBIAS_INTCLEAR_REG = PMU_PMU_BODYBIAS_INTCLEAR_REG_PMU_BB_CLR_CFG_DONE_MASK |
+                                      PMU_PMU_BODYBIAS_INTCLEAR_REG_PMU_BB_CLR_CFG_ERROR_MASK;
+    base->PMU_BODYBIAS_COMMAND_REG = PMU_PMU_BODYBIAS_COMMAND_REG_PMU_BB_CFG_UPDATE_MASK;
 }
 
 void PMU_GetDefaultBodyBiasConfig(pmu_body_bias_config_t *config)
@@ -545,31 +645,29 @@ void PMU_ConfigTemperatureSensor(PMU_Type *base, const pmu_temperature_sensor_co
     assert(config != NULL);
 
     uint32_t reg = 0U;
-    reg |= ((uint32_t)config->htThreshold & 0x3U) << TEMP_HT_THRE_SHIFT;
-    reg |= ((uint32_t)config->ltThreshold & 0x3U) << TEMP_LT_THRE_SHIFT;
-    if (config->trimEnable) { reg |= (1UL << TEMP_TRIM_EN_POS); }
+    reg |= PMU_PMU_TEMP_SENSOR_PMU_TEMP_SENSOR_TH_THRE(config->htThreshold);
+    reg |= PMU_PMU_TEMP_SENSOR_PMU_TEMP_SENSOR_TL_THRE(config->ltThreshold);
+    reg |= PMU_PMU_TEMP_SENSOR_PMU_TEMP_SENSOR_TRIM_EN(config->trimEnable ? 1UL : 0UL);
     base->PMU_TEMP_SENSOR = reg;
 
-    /* IRQ: TEMP bits at [18:17] of PMU_DIG_IRQ_EN_REG. */
-    uint32_t irqEn = base->PMU_DIG_IRQ_EN_REG;
-    irqEn &= ~(0x3UL << 17U);
-    if (config->irqOnHtOk) { irqEn |= (1UL << 17U); }
-    if (config->irqOnLtOk) { irqEn |= (1UL << 18U); }
-    base->PMU_DIG_IRQ_EN_REG = irqEn;
+    uint32_t irqEnable = base->PMU_DIG_IRQ_EN_REG;
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_TEMP_SENSOR_HT_OK_IRQ_EN_MASK, config->irqOnHtOk);
+    PMU_SetOrClearBits(&irqEnable, PMU_PMU_DIG_IRQ_EN_REG_PMU_DIG_TEMP_SENSOR_LT_OK_IRQ_EN_MASK, config->irqOnLtOk);
+    base->PMU_DIG_IRQ_EN_REG = irqEnable;
 
-    /* Warm reset: TEMP bits at [18:17] of RESETCON_WARM_CTRL. */
-    uint32_t warm = base->PMU_RESETCON_WARM_CTRL;
-    warm &= ~(0x3UL << 17U);
-    if (config->warmResetOnHtOk) { warm |= (1UL << 17U); }
-    if (config->warmResetOnLtOk) { warm |= (1UL << 18U); }
-    base->PMU_RESETCON_WARM_CTRL = warm;
+    uint32_t warmReset = base->PMU_RESETCON_WARM_CTRL;
+    PMU_SetOrClearBits(&warmReset, PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_TEMP_SENSOR_HT_OK_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnHtOk);
+    PMU_SetOrClearBits(&warmReset, PMU_PMU_RESETCON_WARM_CTRL_PMU_DIG_TEMP_SENSOR_LT_OK_ASYNC_RESET_WARM_EN_MASK,
+                       config->warmResetOnLtOk);
+    base->PMU_RESETCON_WARM_CTRL = warmReset;
 
-    /* Cold reset: TEMP bits at [18:17] of RESETCON_COLD_CTRL. */
-    uint32_t cold = base->PMU_RESETCON_COLD_CTRL;
-    cold &= ~(0x3UL << 17U);
-    if (config->coldResetOnHtOk) { cold |= (1UL << 17U); }
-    if (config->coldResetOnLtOk) { cold |= (1UL << 18U); }
-    base->PMU_RESETCON_COLD_CTRL = cold;
+    uint32_t coldReset = base->PMU_RESETCON_COLD_CTRL;
+    PMU_SetOrClearBits(&coldReset, PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_TEMP_SENSOR_HT_OK_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnHtOk);
+    PMU_SetOrClearBits(&coldReset, PMU_PMU_RESETCON_COLD_CTRL_PMU_DIG_TEMP_SENSOR_LT_OK_ASYNC_RESET_COLD_EN_MASK,
+                       config->coldResetOnLtOk);
+    base->PMU_RESETCON_COLD_CTRL = coldReset;
 }
 
 /* -------------------------------------------------------------------------- */

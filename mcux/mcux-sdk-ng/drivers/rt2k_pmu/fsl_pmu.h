@@ -21,8 +21,8 @@
 
 /*! @name Driver version */
 /*! @{ */
-/*! @brief PMU driver version 2.0.0. */
-#define FSL_PMU_DRIVER_VERSION (MAKE_VERSION(2, 0, 0))
+/*! @brief PMU driver version 2.1.0. */
+#define FSL_PMU_DRIVER_VERSION (MAKE_VERSION(2, 1, 0))
 /*! @} */
 
 /*! @brief Body bias update polling timeout (iterations).
@@ -35,6 +35,23 @@
 #define PMU_BB_UPDATE_TIMEOUT CONFIG_PMU_BB_UPDATE_TIMEOUT
 #else
 #define PMU_BB_UPDATE_TIMEOUT 0U
+#endif
+#endif
+
+/*! @brief Let PMU_ConfigBodyBias() write the NWELL_VOL/PWELL_VOL trim bitfields.
+ *
+ *  0 (default) = PMU_ConfigBodyBias() does a read-modify-write and never touches
+ *  NWELL_VOL/PWELL_VOL, so it cannot clobber a ROM-applied trim on parts whose
+ *  P-Well/N-Well fuse is not yet trimmed. 1 = PMU_ConfigBodyBias() also writes
+ *  config->nwellVolSel/pwellVolSel, for parts/boards where SW is meant to supply
+ *  the trim. Override via Kconfig (CONFIG_PMU_DRIVER_UPDATE_TRIM_VALUE) or a direct
+ *  preprocessor definition.
+ */
+#ifndef PMU_DRIVER_UPDATE_TRIM_VALUE
+#ifdef CONFIG_PMU_DRIVER_UPDATE_TRIM_VALUE
+#define PMU_DRIVER_UPDATE_TRIM_VALUE CONFIG_PMU_DRIVER_UPDATE_TRIM_VALUE
+#else
+#define PMU_DRIVER_UPDATE_TRIM_VALUE 0U
 #endif
 #endif
 
@@ -184,26 +201,27 @@ typedef struct _pmu_dcdc_config
     bool            bypassEn;         /*!< true = enable DCDC bypass path. */
     bool            ovlPdEn;          /*!< true = pull down output on OVL event. */
 
-    bool                         sensorEnable;     /*!< true = enable output voltage monitor. */
+    bool                         sensorEnable;     /*!< true = enable output voltage monitor. Held in POWERCON
+                                                        PMUCFG_ACTIVE, so this driver does not access it. */
     pmu_sensor_upper_thres_0v8_t sensorUpperThres; /*!< Over-voltage sensor threshold. */
     pmu_sensor_lower_thres_0v8_t sensorLowerThres; /*!< Under-voltage sensor threshold. */
 
     bool irqOnVmaxError;  /*!< true = generate IRQ on over-voltage error. */
     bool irqOnVminError;  /*!< true = generate IRQ on under-voltage error. */
     bool irqOnClkLost;    /*!< true = generate IRQ when switching clock is lost. */
-    bool irqOnUvlo;       /*!< true = generate IRQ on UVLO event. */
+    bool irqOnUvlo;       /*!< true = generate IRQ on UVLO longer than 8.96 us (BUCK_VDDCORE_IRQ). */
     bool irqOnOclWarn;    /*!< true = generate IRQ on over-current warning. */
 
     bool warmResetOnVmaxError; /*!< true = trigger warm reset on over-voltage error. */
     bool warmResetOnVminError; /*!< true = trigger warm reset on under-voltage error. */
     bool warmResetOnClkLost;   /*!< true = trigger warm reset when clock is lost. */
-    bool warmResetOnUvlo;      /*!< true = trigger warm reset on UVLO event. */
+    bool warmResetOnUvlo;      /*!< true = trigger warm reset on UVLO longer than 8.96 us (BUCK_VDDCORE_IRQ). */
     bool warmResetOnOclWarn;   /*!< true = trigger warm reset on over-current warning. */
 
     bool coldResetOnVmaxError; /*!< true = trigger cold reset on over-voltage error. */
     bool coldResetOnVminError; /*!< true = trigger cold reset on under-voltage error. */
     bool coldResetOnClkLost;   /*!< true = trigger cold reset when clock is lost. */
-    bool coldResetOnUvlo;      /*!< true = trigger cold reset on UVLO event. */
+    bool coldResetOnUvlo;      /*!< true = trigger cold reset on UVLO longer than 8.96 us (BUCK_VDDCORE_IRQ). */
     bool coldResetOnOclWarn;   /*!< true = trigger cold reset on over-current warning. */
 } pmu_dcdc_config_t;
 
@@ -246,13 +264,15 @@ typedef enum _pmu_ldo_mode
 /*! @brief LDO_VDD_0V8 (core voltage LDO) configuration. */
 typedef struct _pmu_ldo_vdd0v8_config
 {
-    pmu_ldo_mode_t     mode;         /*!< LDO operating mode. */
+    pmu_ldo_mode_t     mode;         /*!< LDO operating mode. Held in POWERCON PMUCFG_ACTIVE, so this driver
+                                          does not access it. */
     pmu_ldo_volt_sel_t voltSel;      /*!< Output voltage trim in HP mode. */
     pmu_ldo_volt_sel_t lpVoltSel;    /*!< Output voltage trim in LP mode. */
     bool               bypassEn;     /*!< true = enable bypass (short) path. */
     bool               limitDisable; /*!< true = disable current limit. */
 
-    bool                         sensorEnable;     /*!< true = enable output voltage monitor. */
+    bool                         sensorEnable;     /*!< true = enable output voltage monitor. Held in POWERCON
+                                                        PMUCFG_ACTIVE, so this driver does not access it. */
     pmu_sensor_upper_thres_0v8_t sensorUpperThres; /*!< Over-voltage sensor threshold. */
     pmu_sensor_lower_thres_0v8_t sensorLowerThres; /*!< Under-voltage sensor threshold. */
 
@@ -267,12 +287,14 @@ typedef struct _pmu_ldo_vdd0v8_config
 /*! @brief LDO_VDD_1V8 (I/O supply LDO) configuration. */
 typedef struct _pmu_ldo_vdd1v8_config
 {
-    pmu_ldo_mode_t     mode;      /*!< LDO operating mode. */
+    pmu_ldo_mode_t     mode;      /*!< LDO operating mode. Held in POWERCON PMUCFG_ACTIVE, so this driver
+                                       does not access it. */
     pmu_ldo_volt_sel_t voltSel;   /*!< Output voltage trim in HP mode. */
     pmu_ldo_volt_sel_t lpVoltSel; /*!< Output voltage trim in LP mode. */
     bool               bypassEn;  /*!< true = enable bypass path. */
 
-    bool                         sensorEnable;     /*!< true = enable output voltage monitor. */
+    bool                         sensorEnable;     /*!< true = enable output voltage monitor. Held in POWERCON
+                                                        PMUCFG_ACTIVE, so this driver does not access it. */
     pmu_sensor_upper_thres_1v8_t sensorUpperThres; /*!< Over-voltage sensor threshold. */
     pmu_sensor_lower_thres_1v8_t sensorLowerThres; /*!< Under-voltage sensor threshold. */
 
@@ -299,12 +321,14 @@ typedef enum _pmu_ldo_vdda1v8_mode
 /*! @brief LDO_VDDA_1V8 (analog supply LDO) configuration. */
 typedef struct _pmu_ldo_vdda1v8_config
 {
-    pmu_ldo_vdda1v8_mode_t mode;         /*!< LDO operating mode. */
+    pmu_ldo_vdda1v8_mode_t mode;         /*!< LDO operating mode. Held in POWERCON PMUCFG_ACTIVE, so this driver
+                                              does not access it. */
     pmu_ldo_volt_sel_t     voltSel;      /*!< Output voltage trim. */
     bool                   bypassEn;     /*!< true = enable bypass path. */
     bool                   limitDisable; /*!< true = disable current limit. */
 
-    bool                         sensorEnable;     /*!< true = enable output voltage monitor. */
+    bool                         sensorEnable;     /*!< true = enable output voltage monitor. Held in POWERCON
+                                                        PMUCFG_ACTIVE, so this driver does not access it. */
     pmu_sensor_upper_thres_1v8_t sensorUpperThres; /*!< Over-voltage sensor threshold. */
     pmu_sensor_lower_thres_1v8_t sensorLowerThres; /*!< Under-voltage sensor threshold. */
 
@@ -339,7 +363,8 @@ typedef struct _pmu_ldo_aon1v8_config
 /*! @brief VDD_PMU supply monitor configuration. */
 typedef struct _pmu_vdd_pmu_config
 {
-    bool sensorEnable; /*!< true = enable VDD_PMU voltage monitors. */
+    bool sensorEnable; /*!< true = enable VDD_PMU voltage monitors. Held in POWERCON PMUCFG_ACTIVE, so this
+                            driver does not access it. */
 
     pmu_sensor_upper_thres_1v8_t sensor1V8UpperThres; /*!< 1.8 V sensor over-voltage threshold. */
     pmu_sensor_lower_thres_1v8_t sensor1V8LowerThres; /*!< 1.8 V sensor under-voltage threshold. */
@@ -402,8 +427,14 @@ typedef enum _pmu_bb_pwell_clk
 typedef struct _pmu_body_bias_config
 {
     pmu_body_bias_mode_t mode;        /*!< Body bias operating mode. */
-    uint8_t              nwellVolSel; /*!< N-well target voltage selection code (0 = 0 mV for ZBB). */
-    uint8_t              pwellVolSel; /*!< P-well target voltage selection code (0 = 0 mV for ZBB). */
+    uint8_t nwellVolSel; /*!< N-well target voltage selection code. Only written to hardware by
+                              @ref PMU_ConfigBodyBias when PMU_DRIVER_UPDATE_TRIM_VALUE is enabled;
+                              at its default (disabled) this field is diagnostic-only, since ROM owns
+                              the trim on parts whose P-Well/N-Well fuse is not yet trimmed.
+                              @ref PMU_ApplyBodyBiasBlocking derives its own stability-check value
+                              straight from the register, not from this field. */
+    uint8_t pwellVolSel; /*!< P-well target voltage selection code. Same PMU_DRIVER_UPDATE_TRIM_VALUE
+                              gating as nwellVolSel. */
     bool                 advcEnable;  /*!< true = enable advanced body bias control. */
     pmu_bb_ramp_clk_t    rampClkSel;  /*!< Voltage ramp clock frequency. */
     pmu_bb_pwell_clk_t   pwellClkSel; /*!< P-well charge pump clock divider. */
@@ -434,7 +465,8 @@ typedef enum _pmu_temp_lt_thre
 /*! @brief On-die temperature sensor configuration. */
 typedef struct _pmu_temperature_sensor_config
 {
-    bool               sensorEnable; /*!< true = enable the temperature sensor. */
+    bool               sensorEnable; /*!< true = enable the temperature sensor. Held in POWERCON PMUCFG_ACTIVE,
+                                          so this driver does not access it. */
     bool               trimEnable;   /*!< true = apply factory trim values. */
     pmu_temp_ht_thre_t htThreshold;  /*!< High-temperature alert threshold. */
     pmu_temp_lt_thre_t ltThreshold;  /*!< Low-temperature alert threshold. */
@@ -509,10 +541,25 @@ pmu_boot_error_reason_t PMU_GetBootErrorReason(PMU_Type *base);
 /*!
  * @brief Write the DCDC configuration registers.
  *
+ * PMU_BUCK_VDDCORE_ANACTRL_SETTING_REG is written whole. In the registers shared with the other regulators
+ * only the VDD_CORE and BUCK_VDDCORE fields are modified.
+ *
  * @param base    PMU peripheral base address.
  * @param config  Pointer to DCDC configuration. Must not be NULL.
  */
 void PMU_ConfigDcdc(PMU_Type *base, const pmu_dcdc_config_t *config);
+
+/*!
+ * @brief Read back the DCDC configuration from the PMU registers.
+ *
+ * Fills every field that @ref PMU_ConfigDcdc writes; @c mode is read back from BUCK_VDDCORE_IPK_ADJ, where
+ * @ref PMU_ConfigDcdc stores it. @c sensorEnable is held in POWERCON PMUCFG_ACTIVE, not in the PMU, so it is
+ * left unchanged; read it with POWERCON_GetPmucfgActive().
+ *
+ * @param base    PMU peripheral base address.
+ * @param config  Pointer to the DCDC configuration to fill. Must not be NULL.
+ */
+void PMU_GetDcdcConfig(PMU_Type *base, pmu_dcdc_config_t *config);
 
 /*!
  * @brief Write the DCDC PWM loop compensation configuration.
@@ -534,13 +581,29 @@ void PMU_ConfigDcdcPwmMode(PMU_Type *base, const pmu_dcdc_pwm_config_t *config);
 /*!
  * @brief Configure LDO_VDD_0V8 (core voltage LDO).
  *
+ * In the registers shared with the other regulators only the VDD_0V8 fields are modified.
+ *
  * @param base    PMU peripheral base address.
  * @param config  Pointer to LDO_VDD_0V8 configuration. Must not be NULL.
  */
 void PMU_ConfigLdoVdd0V8(PMU_Type *base, const pmu_ldo_vdd0v8_config_t *config);
 
 /*!
+ * @brief Read back the LDO_VDD_0V8 configuration from the PMU registers.
+ *
+ * Fills every field that @ref PMU_ConfigLdoVdd0V8 writes. @c mode and @c sensorEnable are held in POWERCON
+ * PMUCFG_ACTIVE, not in the PMU, so they are left unchanged; read them with POWERCON_GetPmucfgActive().
+ *
+ * @param base    PMU peripheral base address.
+ * @param config  Pointer to the LDO_VDD_0V8 configuration to fill. Must not be NULL.
+ */
+void PMU_GetLdoVdd0V8Config(PMU_Type *base, pmu_ldo_vdd0v8_config_t *config);
+
+/*!
  * @brief Configure LDO_VDD_1V8 (I/O supply LDO).
+ *
+ * In the registers shared with the other regulators only the VDD_1V8 fields are modified. VDD_1V8_DISILIM has
+ * no member in @ref pmu_ldo_vdd1v8_config_t and keeps its current value.
  *
  * @param base    PMU peripheral base address.
  * @param config  Pointer to LDO_VDD_1V8 configuration. Must not be NULL.
@@ -548,13 +611,36 @@ void PMU_ConfigLdoVdd0V8(PMU_Type *base, const pmu_ldo_vdd0v8_config_t *config);
 void PMU_ConfigLdoVdd1V8(PMU_Type *base, const pmu_ldo_vdd1v8_config_t *config);
 
 /*!
+ * @brief Read back the LDO_VDD_1V8 configuration from the PMU registers.
+ *
+ * Fills every field that @ref PMU_ConfigLdoVdd1V8 writes. @c mode and @c sensorEnable are held in POWERCON
+ * PMUCFG_ACTIVE, not in the PMU, so they are left unchanged; read them with POWERCON_GetPmucfgActive().
+ *
+ * @param base    PMU peripheral base address.
+ * @param config  Pointer to the LDO_VDD_1V8 configuration to fill. Must not be NULL.
+ */
+void PMU_GetLdoVdd1V8Config(PMU_Type *base, pmu_ldo_vdd1v8_config_t *config);
+
+/*!
  * @brief Configure LDO_VDDA_1V8 (analog supply LDO).
+ *
+ * In the registers shared with the other regulators only the VDDA_1V8 fields are modified.
  *
  * @param base    PMU peripheral base address.
  * @param config  Pointer to LDO_VDDA_1V8 configuration. Must not be NULL.
  */
 void PMU_ConfigLdoVdda1V8(PMU_Type *base, const pmu_ldo_vdda1v8_config_t *config);
 
+/*!
+ * @brief Read back the LDO_VDDA_1V8 configuration from the PMU registers.
+ *
+ * Fills every field that @ref PMU_ConfigLdoVdda1V8 writes. @c mode and @c sensorEnable are held in POWERCON
+ * PMUCFG_ACTIVE, not in the PMU, so they are left unchanged; read them with POWERCON_GetPmucfgActive().
+ *
+ * @param base    PMU peripheral base address.
+ * @param config  Pointer to the LDO_VDDA_1V8 configuration to fill. Must not be NULL.
+ */
+void PMU_GetLdoVdda1V8Config(PMU_Type *base, pmu_ldo_vdda1v8_config_t *config);
 
 /*! @} */
 
@@ -565,6 +651,8 @@ void PMU_ConfigLdoVdda1V8(PMU_Type *base, const pmu_ldo_vdda1v8_config_t *config
 
 /*!
  * @brief Configure the VDD_PMU voltage monitor.
+ *
+ * In the registers shared with the regulators only the VDD_PMU fields are modified.
  *
  * @param base    PMU peripheral base address.
  * @param config  Pointer to VDD_PMU monitor configuration. Must not be NULL.
@@ -606,6 +694,12 @@ static inline bool PMU_IsVddPmu1V8Range(PMU_Type *base)
  * Writes configuration but does NOT trigger the body bias FSM update.
  * Call @ref PMU_ApplyBodyBiasBlocking or @ref PMU_ApplyBodyBiasNonBlocking
  * after this function to apply the new configuration to hardware.
+ *
+ * Always updates mode/pwellClkSel/rampClkSel/advcEnable. Whether it also writes
+ * config->nwellVolSel/pwellVolSel to the NWELL_VOL/PWELL_VOL bitfields depends on
+ * PMU_DRIVER_UPDATE_TRIM_VALUE: disabled (default) does a read-modify-write that leaves those
+ * bitfields untouched, so a ROM-applied trim on parts with an untrimmed P-Well/N-Well fuse is
+ * never overwritten; enabled writes them like every other field.
  *
  * @param base    PMU peripheral base address.
  * @param config  Pointer to body bias configuration. Must not be NULL.
@@ -654,7 +748,7 @@ void PMU_GetDefaultBodyBiasConfig(pmu_body_bias_config_t *config);
  */
 static inline bool PMU_GetBodyBiasNwellVoltageOk(PMU_Type *base)
 {
-    return (bool)((base->PMU_BODYBIAS_STATUS_STS & (1UL << 0U)) != 0UL);
+    return (bool)((base->PMU_BODYBIAS_STATUS_STS & PMU_PMU_BODYBIAS_STATUS_STS_PMU_BB_NWELL_V_OK_MASK) != 0UL);
 }
 
 /*!
@@ -665,7 +759,7 @@ static inline bool PMU_GetBodyBiasNwellVoltageOk(PMU_Type *base)
  */
 static inline bool PMU_GetBodyBiasPwellVoltageOk(PMU_Type *base)
 {
-    return (bool)((base->PMU_BODYBIAS_STATUS_STS & (1UL << 1U)) != 0UL);
+    return (bool)((base->PMU_BODYBIAS_STATUS_STS & PMU_PMU_BODYBIAS_STATUS_STS_PMU_BB_PWELL_V_OK_MASK) != 0UL);
 }
 
 /*!
@@ -676,7 +770,7 @@ static inline bool PMU_GetBodyBiasPwellVoltageOk(PMU_Type *base)
  */
 static inline bool PMU_GetBodyBiasSafeState(PMU_Type *base)
 {
-    return (bool)((base->PMU_BODYBIAS_STATUS_STS & (1UL << 2U)) != 0UL);
+    return (bool)((base->PMU_BODYBIAS_STATUS_STS & PMU_PMU_BODYBIAS_STATUS_STS_PMU_BB_SAFE_STATE_MASK) != 0UL);
 }
 
 /*!
@@ -687,7 +781,7 @@ static inline bool PMU_GetBodyBiasSafeState(PMU_Type *base)
  */
 static inline bool PMU_CheckBodyBiasUpdateDone(PMU_Type *base)
 {
-    return (bool)((base->PMU_BODYBIAS_INTSTATUS_STS & (1UL << 0U)) != 0UL);
+    return (bool)((base->PMU_BODYBIAS_INTSTATUS_STS & PMU_PMU_BODYBIAS_INTSTATUS_STS_PMU_BB_CFG_DONE_MASK) != 0UL);
 }
 
 /*!
@@ -697,7 +791,7 @@ static inline bool PMU_CheckBodyBiasUpdateDone(PMU_Type *base)
  */
 static inline void PMU_ClearBodyBiasUpdateStatus(PMU_Type *base)
 {
-    base->PMU_BODYBIAS_INTCLEAR_REG = (1UL << 0U);
+    base->PMU_BODYBIAS_INTCLEAR_REG = PMU_PMU_BODYBIAS_INTCLEAR_REG_PMU_BB_CLR_CFG_DONE_MASK;
 }
 
 /*!
@@ -708,7 +802,7 @@ static inline void PMU_ClearBodyBiasUpdateStatus(PMU_Type *base)
  */
 static inline bool PMU_CheckBodyBiasUpdateError(PMU_Type *base)
 {
-    return (bool)((base->PMU_BODYBIAS_INTSTATUS_STS & (1UL << 1U)) != 0UL);
+    return (bool)((base->PMU_BODYBIAS_INTSTATUS_STS & PMU_PMU_BODYBIAS_INTSTATUS_STS_PMU_BB_CFG_ERROR_MASK) != 0UL);
 }
 
 /*!
@@ -718,7 +812,7 @@ static inline bool PMU_CheckBodyBiasUpdateError(PMU_Type *base)
  */
 static inline void PMU_ClearBodyBiasUpdateError(PMU_Type *base)
 {
-    base->PMU_BODYBIAS_INTCLEAR_REG = (1UL << 1U);
+    base->PMU_BODYBIAS_INTCLEAR_REG = PMU_PMU_BODYBIAS_INTCLEAR_REG_PMU_BB_CLR_CFG_ERROR_MASK;
 }
 
 /*! @} */
@@ -730,6 +824,9 @@ static inline void PMU_ClearBodyBiasUpdateError(PMU_Type *base)
 
 /*!
  * @brief Configure the on-die temperature sensor.
+ *
+ * PMU_TEMP_SENSOR is written whole. In the interrupt and reset enable registers only the temperature sensor
+ * bits are modified.
  *
  * @param base    PMU peripheral base address.
  * @param config  Pointer to temperature sensor configuration. Must not be NULL.

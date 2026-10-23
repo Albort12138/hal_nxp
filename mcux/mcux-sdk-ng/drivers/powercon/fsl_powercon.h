@@ -20,8 +20,8 @@
 
 /*! @name Driver version */
 /*@{*/
-/*! @brief powercon driver version 2.0.0. */
-#define FSL_POWERCON_DRIVER_VERSION (MAKE_VERSION(2, 0, 0))
+/*! @brief powercon driver version 2.1.0. */
+#define FSL_POWERCON_DRIVER_VERSION (MAKE_VERSION(2, 1, 0))
 /*@}*/
 
 /*!
@@ -494,6 +494,17 @@ static inline bool POWERCON_IsClockSourceEnabledInActiveMode(POWERCON_SOC_CTRL_T
 static inline void POWERCON_SetPmucfgActive(POWERCON_SOC_CTRL_Type *base, uint32_t cfg)
 {
     base->PMUCFG_ACTIVE = cfg;
+}
+
+/*!
+ * @brief Read PMUCFG_ACTIVE (PMU config word for active mode).
+ *
+ * @param base POWERCON_SOC_CTRL peripheral base address.
+ * @return PMU configuration word.
+ */
+static inline uint32_t POWERCON_GetPmucfgActive(POWERCON_SOC_CTRL_Type *base)
+{
+    return base->PMUCFG_ACTIVE;
 }
 
 /*!
